@@ -1,51 +1,59 @@
 (ns suspendable-process.b
   (:require
-   [clojure.walk :as w]))
-
-(defn- inject* [next form]
-  (let [injected (w/prewalk-replace {'<> next} form)]
-    (cond
-      (not= form injected) injected
-      (seq? form)          `(~@form ~next)
-      :else                (throw (ex-info "This form must contain <> or be a seq")))))
-
-(defn- linearize* [body]
-  (reduce inject* (reverse body)))
-
-(defmacro linearize [& body]
-  (linearize* body))
-
+   [clojure.pprint :as pp]))
 
 (defn process [greeting]
-  (linearize
-   [[:print "What is your name?"]
-    [:read (fn [name] <>)]]
+  [[:do
+    [:print "What is your name?"]
+    [:read]]
+   (fn [[_ name]]
+     [[:do
+       [:print (str greeting " " name)]
+       [:print "Done? (yes/no)"]
+       [:read]]
+      (fn [[_ _ val]]
+        (if (= val "yes")
+          [[:print "Bye!"]
+           (fn [_]
+             [[:return "have a nice day"]])]
+          [[:next greeting]
+           process]))])])
 
-   [[:print (str greeting " " name)]
-    [:print "Done? (yes/no)"]
-    [:read (fn [val] <>)]]
+(defmulti effect->coeffect first)
 
-   (if (= val "yes")
-     [[:print "Bye!"]])
+(defmethod effect->coeffect :print [[_ value]]
+  (prn value))
 
-   [[:next #(process greeting)]]))
+(defmethod effect->coeffect :read [[_]]
+  (read-line))
 
-(defmulti interpret (fn [[type & _ :as effect]] type))
+(defmethod effect->coeffect :next [[_ arg]]
+  arg)
 
-(defmethod interpret :print [[_ value]]
-  (prn value)
-  [])
+(defmethod effect->coeffect :return [[_ val]]
+  val)
 
-(defmethod interpret :read [[_ callback]]
-  (callback (read-line)))
+(defmethod effect->coeffect :do [[_ & effects]]
+  (map effect->coeffect effects))
 
-(defmethod interpret :next [[_ callback]]
-  (callback))
+(defn interpret [f & args]
+  (loop [[effect callback] (apply f args)]
+    (let [coeffect (effect->coeffect effect)]
+      (if (nil? callback)
+        coeffect
+        (recur (callback coeffect))))))
 
-(defn interpretator [interpret effects]
-  (loop [[head & tail] effects]
-    (when head
-      (recur (concat (interpret head) tail)))))
+(defn logged-interpret [f & args]
+  (loop [[effect callback] (apply f args)
+         log               []]
+    (let [coeffect (effect->coeffect effect)]
+      (if (nil? callback)
+        (do
+          (pp/pprint log)
+          coeffect)
+        (recur (callback coeffect)
+               (conj log [effect coeffect]))))))
 
 (comment
-  (interpretator interpret (process "Hi!")))
+  (interpret process "Hi!")
+  (logged-interpret process "Hi!"))

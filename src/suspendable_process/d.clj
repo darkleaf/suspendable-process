@@ -1,4 +1,4 @@
-(ns suspendable-process.c
+(ns suspendable-process.d
   (:require
    [clojure.pprint :as pp]
    [clojure.walk :as w]))
@@ -20,10 +20,13 @@
 
 (defn process [greeting]
   (linearize
+   [[:print "Hi"] (fn [_] <>)]
+   [[:next 0] (fn main-loop [n] <>)]
    [[:do
+     [:print (str "iteration: " n)]
      [:print "What is your name?"]
      [:read]]
-    (fn [[_ name]] <>)]
+    (fn [[_ _ name]] <>)]
    [[:do
      [:print (str greeting " " name)]
      [:print "Done? (yes/no)"]
@@ -33,8 +36,7 @@
      (linearize
       [[:print "Bye!"] (fn [_] <>)]
       [[:return "have a nice day"]]))
-   [[:next greeting]
-    process]))
+   [[:next (inc n)] main-loop]))
 
 (defmulti effect->coeffect first)
 
